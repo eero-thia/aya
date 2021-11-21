@@ -56,20 +56,18 @@ mod xdp;
 
 use libc::{close, dup, ENOSPC};
 use std::{
-    cell::RefCell,
     cmp,
     convert::TryFrom,
     ffi::{CStr, CString},
     io,
     os::unix::io::{AsRawFd, RawFd},
     path::Path,
-    rc::Rc,
 };
 use thiserror::Error;
 
 pub use cgroup_skb::{CgroupSkb, CgroupSkbAttachType};
 pub use kprobe::{KProbe, KProbeError};
-pub use lirc_mode2::LircMode2;
+pub use lirc_mode2::{LircLink, LircMode2};
 pub use lsm::{Lsm, LsmLoadError};
 use perf_attach::*;
 pub use perf_event::{PerfEvent, PerfEventScope, PerfTypeId, SamplePolicy};
@@ -78,12 +76,12 @@ pub use raw_trace_point::RawTracePoint;
 pub use sk_msg::SkMsg;
 pub use sk_skb::{SkSkb, SkSkbKind};
 pub use sock_ops::SockOps;
-pub use socket_filter::{SocketFilter, SocketFilterError};
-pub use tc::{SchedClassifier, TcAttachType, TcError};
+pub use socket_filter::{SocketFilter, SocketFilterError, SocketFilterLink};
+pub use tc::{SchedClassifier, TcAttachType, TcError, TcLink};
 pub use tp_btf::{BtfTracePoint, BtfTracePointError};
 pub use trace_point::{TracePoint, TracePointError};
 pub use uprobe::{UProbe, UProbeError};
-pub use xdp::{Xdp, XdpError, XdpFlags};
+pub use xdp::{NlLink, Xdp, XdpError, XdpFlags};
 
 use crate::{
     generated::{bpf_attach_type, bpf_prog_info, bpf_prog_type},
@@ -296,7 +294,6 @@ pub(crate) struct ProgramData {
     pub(crate) name: String,
     pub(crate) obj: obj::Program,
     pub(crate) fd: Option<RawFd>,
-    pub(crate) links: Vec<Rc<RefCell<dyn Link>>>,
     pub(crate) expected_attach_type: Option<bpf_attach_type>,
     pub(crate) attach_btf_obj_fd: Option<u32>,
     pub(crate) attach_btf_id: Option<u32>,
@@ -305,12 +302,6 @@ pub(crate) struct ProgramData {
 impl ProgramData {
     fn fd_or_err(&self) -> Result<RawFd, ProgramError> {
         self.fd.ok_or(ProgramError::NotLoaded)
-    }
-
-    pub fn link<T: Link + 'static>(&mut self, link: T) -> LinkRef {
-        let link: Rc<RefCell<dyn Link>> = Rc::new(RefCell::new(link));
-        self.links.push(Rc::clone(&link));
-        LinkRef::new(link)
     }
 
     pub fn pin<P: AsRef<Path>>(&mut self, path: P) -> Result<(), ProgramError> {
@@ -489,33 +480,83 @@ pub(crate) fn query<T: AsRawFd>(
 }
 
 /// Detach an attached program.
-pub trait Link: std::fmt::Debug {
+pub trait Link {
     fn detach(&mut self) -> Result<(), ProgramError>;
 }
 
 /// The return type of `program.attach(...)`.
 ///
-/// [`LinkRef`] implements the [`Link`] trait and can be used to detach a
-/// program.
+/// [`OwnedLink`] implements the [`Link`] trait and can be used to detach a
+/// program. When dropped, OwnedLink will detach the program.
 #[derive(Debug)]
-pub struct LinkRef {
-    inner: Rc<RefCell<dyn Link>>,
+pub enum OwnedLink {
+    Fd(FdLink),
+    Lirc(LircLink),
+    Nl(NlLink),
+    Perf(PerfLink),
+    ProgAttach(ProgAttachLink),
+    SocketFilter(SocketFilterLink),
+    Tc(TcLink),
 }
 
-impl LinkRef {
-    fn new(link: Rc<RefCell<dyn Link>>) -> LinkRef {
-        LinkRef { inner: link }
-    }
-}
-
-impl Link for LinkRef {
+impl Link for OwnedLink {
     fn detach(&mut self) -> Result<(), ProgramError> {
-        self.inner.borrow_mut().detach()
+        match self {
+            Self::Fd(link) => link.detach(),
+            Self::Lirc(link) => link.detach(),
+            Self::Nl(link) => link.detach(),
+            Self::Perf(link) => link.detach(),
+            Self::ProgAttach(link) => link.detach(),
+            Self::SocketFilter(link) => link.detach(),
+            Self::Tc(link) => link.detach(),
+        }
+    }
+}
+
+impl From<FdLink> for OwnedLink {
+    fn from(l: FdLink) -> Self {
+        Self::Fd(l)
+    }
+}
+
+impl From<LircLink> for OwnedLink {
+    fn from(l: LircLink) -> Self {
+        Self::Lirc(l)
+    }
+}
+
+impl From<NlLink> for OwnedLink {
+    fn from(l: NlLink) -> Self {
+        Self::Nl(l)
+    }
+}
+
+impl From<PerfLink> for OwnedLink {
+    fn from(l: PerfLink) -> Self {
+        Self::Perf(l)
+    }
+}
+
+impl From<ProgAttachLink> for OwnedLink {
+    fn from(l: ProgAttachLink) -> Self {
+        Self::ProgAttach(l)
+    }
+}
+
+impl From<SocketFilterLink> for OwnedLink {
+    fn from(l: SocketFilterLink) -> Self {
+        Self::SocketFilter(l)
+    }
+}
+
+impl From<TcLink> for OwnedLink {
+    fn from(l: TcLink) -> Self {
+        Self::Tc(l)
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct FdLink {
+pub struct FdLink {
     fd: Option<RawFd>,
 }
 
@@ -537,7 +578,7 @@ impl Drop for FdLink {
 }
 
 #[derive(Debug)]
-struct ProgAttachLink {
+pub struct ProgAttachLink {
     prog_fd: Option<RawFd>,
     target_fd: Option<RawFd>,
     attach_type: bpf_attach_type,
