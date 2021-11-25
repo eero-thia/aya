@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     generated::bpf_map_type::{BPF_MAP_TYPE_HASH, BPF_MAP_TYPE_LRU_HASH},
-    maps::{hash_map, IterableMap, Map, MapError, MapIter, MapKeys, MapRef, MapRefMut},
+    maps::{hash_map, IterableMap, Map, MapError, MapIter, MapKeys},
     sys::bpf_map_lookup_elem,
     Pod,
 };
@@ -20,7 +20,7 @@ use crate::{
 /// # Examples
 ///
 /// ```no_run
-/// # let bpf = aya::Bpf::load(&[])?;
+/// # let mut bpf = aya::Bpf::load(&[])?;
 /// use aya::maps::HashMap;
 /// use std::convert::TryFrom;
 ///
@@ -105,22 +105,6 @@ impl<T: Deref<Target = Map>, K: Pod, V: Pod> IterableMap<K, V> for HashMap<T, K,
 
     unsafe fn get(&self, key: &K) -> Result<V, MapError> {
         HashMap::get(self, key, 0)
-    }
-}
-
-impl<K: Pod, V: Pod> TryFrom<MapRef> for HashMap<MapRef, K, V> {
-    type Error = MapError;
-
-    fn try_from(a: MapRef) -> Result<HashMap<MapRef, K, V>, MapError> {
-        HashMap::new(a)
-    }
-}
-
-impl<K: Pod, V: Pod> TryFrom<MapRefMut> for HashMap<MapRefMut, K, V> {
-    type Error = MapError;
-
-    fn try_from(a: MapRefMut) -> Result<HashMap<MapRefMut, K, V>, MapError> {
-        HashMap::new(a)
     }
 }
 

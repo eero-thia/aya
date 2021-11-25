@@ -7,9 +7,7 @@ use std::{
 
 use crate::{
     generated::bpf_map_type::{BPF_MAP_TYPE_LRU_PERCPU_HASH, BPF_MAP_TYPE_PERCPU_HASH},
-    maps::{
-        hash_map, IterableMap, Map, MapError, MapIter, MapKeys, MapRef, MapRefMut, PerCpuValues,
-    },
+    maps::{hash_map, IterableMap, Map, MapError, MapIter, MapKeys, PerCpuValues},
     sys::{bpf_map_lookup_elem_per_cpu, bpf_map_update_elem_per_cpu},
     Pod,
 };
@@ -27,7 +25,7 @@ use crate::{
 /// # Examples
 ///
 /// ```no_run
-/// # let bpf = aya::Bpf::load(&[])?;
+/// # let mut bpf = aya::Bpf::load(&[])?;
 /// use aya::maps::PerCpuHashMap;
 /// use std::convert::TryFrom;
 ///
@@ -113,7 +111,7 @@ impl<T: DerefMut<Target = Map>, K: Pod, V: Pod> PerCpuHashMap<T, K, V> {
     /// #     #[error(transparent)]
     /// #     Bpf(#[from] aya::BpfError)
     /// # }
-    /// # let bpf = aya::Bpf::load(&[])?;
+    /// # let mut bpf = aya::Bpf::load(&[])?;
     /// use aya::maps::{PerCpuHashMap, PerCpuValues};
     /// use aya::util::nr_cpus;
     /// use std::convert::TryFrom;
@@ -156,22 +154,6 @@ impl<T: Deref<Target = Map>, K: Pod, V: Pod> IterableMap<K, PerCpuValues<V>>
 
     unsafe fn get(&self, key: &K) -> Result<PerCpuValues<V>, MapError> {
         PerCpuHashMap::get(self, key, 0)
-    }
-}
-
-impl<K: Pod, V: Pod> TryFrom<MapRef> for PerCpuHashMap<MapRef, K, V> {
-    type Error = MapError;
-
-    fn try_from(a: MapRef) -> Result<PerCpuHashMap<MapRef, K, V>, MapError> {
-        PerCpuHashMap::new(a)
-    }
-}
-
-impl<K: Pod, V: Pod> TryFrom<MapRefMut> for PerCpuHashMap<MapRefMut, K, V> {
-    type Error = MapError;
-
-    fn try_from(a: MapRefMut) -> Result<PerCpuHashMap<MapRefMut, K, V>, MapError> {
-        PerCpuHashMap::new(a)
     }
 }
 

@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     error::Error,
     ffi::CString,
     fs, io,
@@ -15,7 +15,7 @@ use crate::{
         bpf_map_type::BPF_MAP_TYPE_PERF_EVENT_ARRAY, AYA_PERF_EVENT_IOC_DISABLE,
         AYA_PERF_EVENT_IOC_ENABLE, AYA_PERF_EVENT_IOC_SET_BPF,
     },
-    maps::{Map, MapError, MapLock, MapRef, MapRefMut},
+    maps::{Map, MapError},
     obj::{
         btf::{Btf, BtfError},
         Object, ParseError, ProgramSection,
@@ -318,10 +318,6 @@ impl<'a> BpfLoader<'a> {
                 (name, program)
             })
             .collect();
-        let maps = maps
-            .drain()
-            .map(|(name, map)| (name, MapLock::new(map)))
-            .collect();
         Ok(Bpf { maps, programs })
     }
 }
@@ -335,7 +331,7 @@ impl<'a> Default for BpfLoader<'a> {
 /// The main entry point into the library, used to work with eBPF programs and maps.
 #[derive(Debug)]
 pub struct Bpf {
-    maps: HashMap<String, MapLock>,
+    maps: HashMap<String, Map>,
     programs: HashMap<String, Program>,
 }
 
@@ -397,19 +393,20 @@ impl Bpf {
     ///
     /// # Errors
     ///
-    /// Returns [`MapError::MapNotFound`] if the map does not exist. If the map is already borrowed
-    /// mutably with [map_mut](Self::map_mut) then [`MapError::BorrowError`] is returned.
-    pub fn map(&self, name: &str) -> Result<MapRef, MapError> {
-        self.maps
-            .get(name)
-            .ok_or_else(|| MapError::MapNotFound {
-                name: name.to_owned(),
-            })
-            .and_then(|lock| {
-                lock.try_read().map_err(|_| MapError::BorrowError {
-                    name: name.to_owned(),
-                })
-            })
+    /// Returns [`MapError::NotFound`] if the map does not exist.
+    pub fn map(&self, name: &str) -> Result<&Map, MapError> {
+        self.map_opt(name).ok_or(MapError::NotFound)
+    }
+
+    /// Returns a reference to the map with the given name.
+    ///
+    /// The returned type is mostly opaque. In order to do anything useful with it you need to
+    /// convert it to a [typed map](crate::maps).
+    ///
+    /// For more details and examples on maps and their usage, see the [maps module
+    /// documentation][crate::maps].
+    pub fn map_opt(&self, name: &str) -> Option<&Map> {
+        self.maps.get(name)
     }
 
     /// Returns a mutable reference to the map with the given name.
@@ -422,19 +419,68 @@ impl Bpf {
     ///
     /// # Errors
     ///
-    /// Returns [`MapError::MapNotFound`] if the map does not exist. If the map is already borrowed
-    /// mutably with [map_mut](Self::map_mut) then [`MapError::BorrowError`] is returned.
-    pub fn map_mut(&self, name: &str) -> Result<MapRefMut, MapError> {
-        self.maps
-            .get(name)
-            .ok_or_else(|| MapError::MapNotFound {
-                name: name.to_owned(),
-            })
-            .and_then(|lock| {
-                lock.try_write().map_err(|_| MapError::BorrowError {
-                    name: name.to_owned(),
-                })
-            })
+    /// Returns [`MapError::NotFound`] if the map does not exist.
+    pub fn map_mut(&mut self, name: &str) -> Result<&mut Map, MapError> {
+        self.map_mut_opt(name).ok_or(MapError::NotFound)
+    }
+
+    /// Returns a mutable reference to the map with the given name.
+    ///
+    /// The returned type is mostly opaque. In order to do anything useful with it you need to
+    /// convert it to a [typed map](crate::maps).
+    ///
+    /// For more details and examples on maps and their usage, see the [maps module
+    /// documentation][crate::maps].
+    pub fn map_mut_opt(&mut self, name: &str) -> Option<&mut Map> {
+        self.maps.get_mut(name)
+    }
+
+    /// Take ownership of the map with the given name. Useful when intending to maintain frequent
+    /// access to a map without repeatedly incurring the cost of converting it into a
+    /// [typed map](crate::maps).
+    ///
+    /// The returned type is mostly opaque. In order to do anything useful with it you need to
+    /// convert it to a [typed map](crate::maps).
+    ///
+    /// For more details and examples on maps and their usage, see the [maps module
+    /// documentation][crate::maps].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MapError::NotFound`] if the map does not exist.
+    pub fn take_map(&mut self, name: &str) -> Result<(String, Map), MapError> {
+        self.take_map_opt(name).ok_or(MapError::NotFound)
+    }
+
+    /// Take ownership of the map with the given name. Useful when intending to maintain frequent
+    /// access to a map without repeatedly incurring the cost of converting it into a
+    /// [typed map](crate::maps).
+    ///
+    /// The returned type is mostly opaque. In order to do anything useful with it you need to
+    /// convert it to a [typed map](crate::maps).
+    ///
+    /// For more details and examples on maps and their usage, see the [maps module
+    /// documentation][crate::maps].
+    pub fn take_map_opt(&mut self, name: &str) -> Option<(String, Map)> {
+        self.maps.remove_entry(name)
+    }
+
+    /// Return ownership of the map with the given name. This is the dual of [take_map](Self::take_map).
+    ///
+    /// For more details and examples on maps and their usage, see the [maps module
+    /// documentation][crate::maps].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MapError::Occupied`] if a map already exists at the given name.
+    pub fn return_map(&mut self, name: String, map: Map) -> Result<(), MapError> {
+        match self.maps.entry(name) {
+            Entry::Vacant(vacant) => {
+                vacant.insert(map);
+                Ok(())
+            }
+            Entry::Occupied(_) => Err(MapError::Occupied),
+        }
     }
 
     /// An iterator over all the maps.
@@ -446,23 +492,16 @@ impl Bpf {
     ///     println!(
     ///         "found map `{}` of type `{:?}`",
     ///         name,
-    ///         map?.map_type().unwrap()
+    ///         map.map_type().unwrap()
     ///     );
     /// }
     /// # Ok::<(), aya::BpfError>(())
     /// ```
-    pub fn maps(&self) -> impl Iterator<Item = (&str, Result<MapRef, MapError>)> {
-        let ret = self.maps.iter().map(|(name, lock)| {
-            (
-                name.as_str(),
-                lock.try_read()
-                    .map_err(|_| MapError::BorrowError { name: name.clone() }),
-            )
-        });
-        ret
+    pub fn maps(&self) -> impl Iterator<Item = (&str, &Map)> {
+        self.maps.iter().map(|(s, m)| (s.as_str(), m))
     }
 
-    /// Returns a reference to the program with the given name.
+    /// Returns a reference to the program with the given name if it exists.
     ///
     /// You can use this to inspect a program and its properties. To load and attach a program, use
     /// [program_mut](Self::program_mut) instead.
@@ -483,10 +522,32 @@ impl Bpf {
     /// # Ok::<(), aya::BpfError>(())
     /// ```
     pub fn program(&self, name: &str) -> Result<&Program, ProgramError> {
-        self.programs.get(name).ok_or(ProgramError::NotFound)
+        self.program_opt(name).ok_or(ProgramError::NotFound)
     }
 
-    /// Returns a mutable reference to the program with the given name.
+    /// Returns a reference to the program with the given name if it exists.
+    ///
+    /// You can use this to inspect a program and its properties. To load and attach a program, use
+    /// [program_mut_opt](Self::program_mut_opt) instead.
+    ///
+    /// For more details on programs and their usage, see the [programs module
+    /// documentation](crate::programs).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # let bpf = aya::Bpf::load(&[])?;
+    /// let maybe_program = bpf.program_opt("SSL_read");
+    /// if let Some(program) = maybe_program {
+    ///     println!("program SSL_read is of type {:?}", program.prog_type());
+    /// }
+    /// # Ok::<(), aya::BpfError>(())
+    /// ```
+    pub fn program_opt(&self, name: &str) -> Option<&Program> {
+        self.programs.get(name)
+    }
+
+    /// Returns a mutable reference to the program with the given name if it exists.
     ///
     /// Used to get a program before loading and attaching it. For more details on programs and
     /// their usage, see the [programs module documentation](crate::programs).
@@ -508,10 +569,32 @@ impl Bpf {
     /// # Ok::<(), aya::BpfError>(())
     /// ```
     pub fn program_mut(&mut self, name: &str) -> Result<&mut Program, ProgramError> {
-        self.programs.get_mut(name).ok_or(ProgramError::NotFound)
+        self.program_mut_opt(name).ok_or(ProgramError::NotFound)
     }
 
-    /// An iterator over all the programs.
+    /// Returns a mutable reference to the program with the given name if it exists.
+    ///
+    /// Used to get a program before loading and attaching it. For more details on programs and
+    /// their usage, see the [programs module documentation](crate::programs).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use aya::programs::ProgramError;
+    /// # let mut bpf = aya::Bpf::load(&[])?;
+    /// use aya::programs::UProbe;
+    /// use std::convert::TryInto;
+    ///
+    /// let program: &mut UProbe = bpf.program_mut_opt("SSL_read").ok_or(ProgramError::NotFound)?.try_into()?;
+    /// program.load()?;
+    /// program.attach(Some("SSL_read"), 0, "libssl", None)?;
+    /// # Ok::<(), aya::BpfError>(())
+    /// ```
+    pub fn program_mut_opt(&mut self, name: &str) -> Option<&mut Program> {
+        self.programs.get_mut(name)
+    }
+
+    /// An iterator over all of the programs.
     ///
     /// # Examples
     /// ```no_run

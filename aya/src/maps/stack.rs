@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     generated::bpf_map_type::BPF_MAP_TYPE_STACK,
-    maps::{Map, MapError, MapRef, MapRefMut},
+    maps::{Map, MapError},
     sys::{bpf_map_lookup_and_delete_elem, bpf_map_update_elem},
     Pod,
 };
@@ -21,7 +21,7 @@ use crate::{
 ///
 /// # Examples
 /// ```no_run
-/// # let bpf = aya::Bpf::load(&[])?;
+/// # let mut bpf = aya::Bpf::load(&[])?;
 /// use aya::maps::Stack;
 /// use std::convert::TryFrom;
 ///
@@ -110,18 +110,18 @@ impl<T: Deref<Target = Map> + DerefMut<Target = Map>, V: Pod> Stack<T, V> {
     }
 }
 
-impl<V: Pod> TryFrom<MapRef> for Stack<MapRef, V> {
+impl<'a, V: Pod> TryFrom<&'a Map> for Stack<&'a Map, V> {
     type Error = MapError;
 
-    fn try_from(a: MapRef) -> Result<Stack<MapRef, V>, MapError> {
+    fn try_from(a: &'a Map) -> Result<Stack<&'a Map, V>, MapError> {
         Stack::new(a)
     }
 }
 
-impl<V: Pod> TryFrom<MapRefMut> for Stack<MapRefMut, V> {
+impl<'a, V: Pod> TryFrom<&'a mut Map> for Stack<&'a mut Map, V> {
     type Error = MapError;
 
-    fn try_from(a: MapRefMut) -> Result<Stack<MapRefMut, V>, MapError> {
+    fn try_from(a: &'a mut Map) -> Result<Stack<&'a mut Map, V>, MapError> {
         Stack::new(a)
     }
 }
