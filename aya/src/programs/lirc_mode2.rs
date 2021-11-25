@@ -59,11 +59,6 @@ impl LircMode2 {
         load_program(BPF_PROG_TYPE_LIRC_MODE2, &mut self.data)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Attaches the program to the given lirc device.
     pub fn attach<T: AsRawFd>(&mut self, lircdev: T) -> Result<OwnedLink, ProgramError> {
         let prog_fd = self.data.fd_or_err()?;

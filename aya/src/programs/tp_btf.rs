@@ -81,11 +81,6 @@ impl BtfTracePoint {
         load_program(BPF_PROG_TYPE_TRACING, &mut self.data)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Attaches the program.
     pub fn attach(&mut self) -> Result<OwnedLink, ProgramError> {
         let prog_fd = self.data.fd_or_err()?;

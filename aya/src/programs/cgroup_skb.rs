@@ -61,11 +61,6 @@ impl CgroupSkb {
         load_program(BPF_PROG_TYPE_CGROUP_SKB, &mut self.data)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Returns the expected attach type of the program.
     ///
     /// [`CgroupSkb`] programs can specify the expected attach type in their ELF

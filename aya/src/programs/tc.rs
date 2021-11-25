@@ -1,7 +1,7 @@
 //! Network traffic control programs.
 use thiserror::Error;
 
-use std::{ffi::CString, io, os::unix::io::RawFd};
+use std::{ffi::CStr, io, os::unix::io::RawFd};
 
 use crate::{
     generated::{
@@ -69,6 +69,7 @@ pub enum TcAttachType {
 #[doc(alias = "BPF_PROG_TYPE_SCHED_CLS")]
 pub struct SchedClassifier {
     pub(crate) data: ProgramData,
+    pub(crate) name: Box<CStr>,
 }
 
 #[derive(Debug, Error)]
@@ -108,11 +109,6 @@ impl SchedClassifier {
         load_program(BPF_PROG_TYPE_SCHED_CLS, &mut self.data)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Attaches the program to the given `interface`.
     ///
     /// # Errors
@@ -129,9 +125,8 @@ impl SchedClassifier {
         let prog_fd = self.data.fd_or_err()?;
         let if_index = ifindex_from_ifname(interface)
             .map_err(|io_error| TcError::NetlinkError { io_error })?;
-        let name = CString::new(self.name()).unwrap();
         let priority =
-            unsafe { netlink_qdisc_attach(if_index as i32, &attach_type, prog_fd, &name) }
+            unsafe { netlink_qdisc_attach(if_index as i32, &attach_type, prog_fd, &self.name) }
                 .map_err(|io_error| TcError::NetlinkError { io_error })?;
 
         Ok(TcLink {
@@ -180,14 +175,16 @@ pub fn qdisc_add_clsact(if_name: &str) -> Result<(), io::Error> {
 pub fn qdisc_detach_program(
     if_name: &str,
     attach_type: TcAttachType,
-    name: &str,
+    name: &CStr,
 ) -> Result<(), io::Error> {
     let if_index = ifindex_from_ifname(if_name)? as i32;
-    let c_name = CString::new(name).unwrap();
 
-    let prios = unsafe { netlink_find_filter_with_name(if_index, attach_type, &c_name)? };
+    let prios = unsafe { netlink_find_filter_with_name(if_index, attach_type, name)? };
     if prios.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::NotFound, name.to_string()));
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            name.to_string_lossy(),
+        ));
     }
 
     for prio in prios {

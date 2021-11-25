@@ -94,8 +94,8 @@ use crate::{
 #[derive(Debug, Error)]
 pub enum ProgramError {
     /// The program could not be found in the object code.
-    #[error("program `{name}` not found")]
-    NotFound { name: String },
+    #[error("program not found")]
+    NotFound,
 
     /// The program is already loaded.
     #[error("the program is already loaded")]
@@ -238,11 +238,6 @@ impl Program {
         }
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> &str {
-        &self.data().name
-    }
-
     /// Pin the program to the provided path
     pub fn pin<P: AsRef<Path>>(&mut self, path: P) -> Result<(), ProgramError> {
         self.data_mut().pin(path)
@@ -291,7 +286,6 @@ impl Program {
 
 #[derive(Debug)]
 pub(crate) struct ProgramData {
-    pub(crate) name: String,
     pub(crate) obj: obj::Program,
     pub(crate) fd: Option<RawFd>,
     pub(crate) expected_attach_type: Option<bpf_attach_type>,

@@ -50,11 +50,6 @@ impl KProbe {
         load_program(BPF_PROG_TYPE_KPROBE, &mut self.data)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Returns `KProbe` if the program is a `kprobe`, or `KRetProbe` if the
     /// program is a `kretprobe`.
     pub fn kind(&self) -> ProbeKind {

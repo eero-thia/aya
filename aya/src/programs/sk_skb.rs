@@ -58,11 +58,6 @@ impl SkSkb {
         load_program(BPF_PROG_TYPE_SK_SKB, &mut self.data)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Attaches the program to the given socket map.
     pub fn attach(&mut self, map: impl SocketMap) -> Result<OwnedLink, ProgramError> {
         let prog_fd = self.data.fd_or_err()?;

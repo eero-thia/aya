@@ -75,11 +75,6 @@ impl Xdp {
         load_program(BPF_PROG_TYPE_XDP, &mut self.data)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Attaches the program to the given `interface`.
     ///
     /// # Errors

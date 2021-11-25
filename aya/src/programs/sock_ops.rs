@@ -54,11 +54,6 @@ impl SockOps {
         load_program(BPF_PROG_TYPE_SOCK_OPS, &mut self.data)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Attaches the program to the given cgroup.
     pub fn attach<T: AsRawFd>(&mut self, cgroup: T) -> Result<OwnedLink, ProgramError> {
         let prog_fd = self.data.fd_or_err()?;

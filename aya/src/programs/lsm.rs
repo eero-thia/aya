@@ -83,11 +83,6 @@ impl Lsm {
         load_program(BPF_PROG_TYPE_LSM, &mut self.data).map_err(LsmLoadError::from)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Attaches the program.
     pub fn attach(&mut self) -> Result<OwnedLink, ProgramError> {
         attach_btf_id(&mut self.data)

@@ -45,11 +45,6 @@ impl RawTracePoint {
         load_program(BPF_PROG_TYPE_RAW_TRACEPOINT, &mut self.data)
     }
 
-    /// Returns the name of the program.
-    pub fn name(&self) -> String {
-        self.data.name.to_string()
-    }
-
     /// Attaches the program to the given tracepoint.
     pub fn attach(&mut self, tp_name: &str) -> Result<OwnedLink, ProgramError> {
         let prog_fd = self.data.fd_or_err()?;
