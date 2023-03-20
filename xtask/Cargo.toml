@@ -8,7 +8,7 @@ edition = "2018"
 aya-gen = { path = "../aya-gen" }
 structopt = {version = "0.3", default-features = false }
 anyhow = "1"
-syn = "1"
+syn = "2"
 quote = "1"
 proc-macro2 = "1"
 indexmap = "1.6"
